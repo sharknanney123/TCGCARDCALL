@@ -67,6 +67,28 @@ async function requireAdmin() {
   return user.id;
 }
 
+/** Minimal RFC-4180 CSV line parser: handles quoted fields and escaped quotes. */
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = false;
+      } else cur += ch;
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ",") { out.push(cur.trim()); cur = ""; }
+      else cur += ch;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
 /**
  * CSV import for the card pool and/or fallback prices.
  * Columns (header row required):
@@ -80,7 +102,7 @@ export async function importCsv(formData: FormData): Promise<ActionResult> {
     if (!file) return { ok: false, message: "Choose a CSV file." };
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const header = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
     const idx = (name: string) => header.indexOf(name);
     if (idx("scryfall_id") === -1 || idx("card_name") === -1) {
       return { ok: false, message: "CSV needs at least scryfall_id and card_name columns." };
@@ -88,7 +110,7 @@ export async function importCsv(formData: FormData): Promise<ActionResult> {
     const admin = supabaseAdmin();
     let cardCount = 0, priceCount = 0;
     for (const line of lines.slice(1)) {
-      const cols = line.split(",").map((c) => c.trim());
+      const cols = parseCsvLine(line);
       const get = (name: string) => (idx(name) >= 0 ? cols[idx(name)] ?? "" : "");
       const scryfallId = get("scryfall_id");
       if (!scryfallId) continue;
