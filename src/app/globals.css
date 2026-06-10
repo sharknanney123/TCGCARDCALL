@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Spectral", Georgia, serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+body {
+  @apply bg-ink text-parchment font-body antialiased;
+  background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(212, 168, 67, 0.07), transparent);
+}
+
+.panel {
+  @apply bg-panel border border-edge rounded-xl;
+}
+
+.chip {
+  @apply font-mono text-xs px-2 py-0.5 rounded-full border;
+}
+.chip-up { @apply chip text-jade border-jade/40 bg-jade/10; }
+.chip-down { @apply chip text-ember border-ember/40 bg-ember/10; }
+.chip-flat { @apply chip text-faded border-edge bg-edge/30; }
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold
+         transition-colors disabled:opacity-50 disabled:cursor-not-allowed
+         focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold;
+}
+.btn-gold { @apply btn bg-gold text-ink hover:bg-gold/90; }
+.btn-ghost { @apply btn border border-edge text-parchment hover:border-gold/60; }
+.btn-buy { @apply btn bg-jade text-ink hover:bg-jade/90; }
+.btn-sell { @apply btn bg-ember text-ink hover:bg-ember/90; }
+
+.input {
+  @apply w-full rounded-lg border border-edge bg-ink px-3 py-2 text-parchment
+         placeholder:text-faded/60 focus:border-gold focus:outline-none;
+}
+
+.th { @apply text-left text-xs uppercase tracking-wider text-faded font-medium px-3 py-2; }
+.td { @apply px-3 py-2.5 text-sm border-t border-edge/60; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

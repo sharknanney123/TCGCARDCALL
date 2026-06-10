@@ -1,0 +1,129 @@
+import Link from "next/link";
+import { supabaseServer } from "@/lib/supabase/server";
+import { usd, pct, gainClass } from "@/lib/format";
+import PctChip from "@/components/PctChip";
+
+export const dynamic = "force-dynamic";
+
+export default async function Dashboard() {
+  const supabase = supabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // Join the active season on first visit; log the login event.
+  await supabase.rpc("join_active_season");
+  await supabase.rpc("log_event", { p_type: "login", p_meta: {} });
+
+  const { data: season } = await supabase
+    .from("seasons").select("id, name, end_date").eq("status", "active")
+    .order("start_date", { ascending: false }).limit(1).maybeSingle();
+
+  if (!season) {
+    return (
+      <div className="py-16 text-center space-y-3">
+        <h1 className="font-display text-2xl">No season is live right now</h1>
+        <p className="text-faded">The next season will appear here when it starts.</p>
+      </div>
+    );
+  }
+
+  const [{ data: pf }, { data: movers }, { data: call }, { data: watch }] = await Promise.all([
+    supabase.from("portfolios").select("*").eq("user_id", user.id).eq("season_id", season.id).maybeSingle(),
+    supabase.from("v_card_prices").select("*").eq("active", true)
+      .not("pct_change", "is", null).order("pct_change", { ascending: false }).limit(50),
+    supabase.from("v_biggest_calls").select("*").eq("season_id", season.id)
+      .order("gain_pct", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("watchlist").select("card_id").eq("user_id", user.id).limit(4),
+  ]);
+
+  const watchIds = (watch ?? []).map((w) => w.card_id);
+  const { data: watchCards } = watchIds.length
+    ? await supabase.from("v_card_prices").select("*").in("card_id", watchIds)
+    : { data: [] as never[] };
+
+  const sorted = movers ?? [];
+  const topUp = sorted.slice(0, 3);
+  const topDown = [...sorted].reverse().slice(0, 3);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <h1 className="font-display text-2xl">{season.name}</h1>
+        <p className="text-sm text-faded">Season ends {season.end_date}</p>
+      </div>
+
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="panel p-4">
+          <p className="text-xs text-faded uppercase tracking-wider">Portfolio value</p>
+          <p className="font-mono text-xl mt-1">{usd(pf?.total_value)}</p>
+        </div>
+        <div className="panel p-4">
+          <p className="text-xs text-faded uppercase tracking-wider">Percent gain</p>
+          <p className={`font-mono text-xl mt-1 ${gainClass(pf?.percent_gain)}`}>{pct(pf?.percent_gain)}</p>
+        </div>
+        <div className="panel p-4">
+          <p className="text-xs text-faded uppercase tracking-wider">Virtual cash</p>
+          <p className="font-mono text-xl mt-1">{usd(pf?.virtual_cash)}</p>
+        </div>
+        <div className="panel p-4">
+          <p className="text-xs text-faded uppercase tracking-wider">Season rank</p>
+          <p className="font-mono text-xl mt-1">
+            {pf?.rank ? `#${pf.rank}` : <span className="text-faded text-sm">Trade 3+ cards to rank</span>}
+          </p>
+        </div>
+      </section>
+
+      {call && (
+        <section className="panel p-4 border-gold/40 bg-gradient-to-r from-gold/10 to-transparent">
+          <p className="text-xs text-gold uppercase tracking-[0.25em] mb-1">Biggest call of the season</p>
+          <p className="text-sm">
+            <Link href={`/u/${call.username}`} className="text-gold hover:underline">@{call.username}</Link>
+            {" "}called <Link href={`/card/${call.card_id}`} className="hover:underline font-medium">{call.card_name}</Link>
+            {" "}at <span className="font-mono">{usd(call.buy_price)}</span> →{" "}
+            <span className="font-mono">{usd(call.exit_or_current_price)}</span>{" "}
+            <PctChip value={call.gain_pct} />
+          </p>
+        </section>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <section className="panel p-4">
+          <h2 className="font-display mb-3">Top movers today</h2>
+          <ul className="space-y-2">
+            {[...topUp, ...topDown].map((c) => (
+              <li key={c.card_id} className="flex items-center justify-between gap-2 text-sm">
+                <Link href={`/card/${c.card_id}`} className="truncate hover:text-gold">{c.card_name}</Link>
+                <span className="flex items-center gap-2 font-mono">
+                  {usd(c.current_price)} <PctChip value={c.pct_change} />
+                </span>
+              </li>
+            ))}
+            {sorted.length === 0 && <li className="text-sm text-faded">Movers appear after the first two daily price updates.</li>}
+          </ul>
+        </section>
+
+        <section className="panel p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display">Your watchlist</h2>
+            <Link href="/watchlist" className="text-xs text-gold hover:underline">View all</Link>
+          </div>
+          <ul className="space-y-2">
+            {(watchCards ?? []).map((c) => (
+              <li key={c.card_id} className="flex items-center justify-between gap-2 text-sm">
+                <Link href={`/card/${c.card_id}`} className="truncate hover:text-gold">{c.card_name}</Link>
+                <span className="flex items-center gap-2 font-mono">
+                  {usd(c.current_price)} <PctChip value={c.pct_change} />
+                </span>
+              </li>
+            ))}
+            {watchIds.length === 0 && (
+              <li className="text-sm text-faded">
+                Nothing watched yet. <Link href="/market" className="text-gold hover:underline">Browse the market</Link> and star the cards you think will move.
+              </li>
+            )}
+          </ul>
+        </section>
+      </div>
+    </div>
+  );
+}
