@@ -7,28 +7,40 @@ export type ActionResult = { ok: boolean; message: string };
 
 // ---------- Player actions ----------
 
+// Forward pricing: orders are queued and fill at the NEXT daily price update.
+// Buys are denominated in pre-fee dollars; sells in fractional quantity.
 export async function placeTrade(formData: FormData): Promise<ActionResult> {
   const supabase = supabaseServer();
   const card = String(formData.get("card_id") ?? "");
   const side = String(formData.get("side") ?? "");
-  const mode = String(formData.get("mode") ?? "amount");
   const raw = Number(formData.get("value") ?? 0);
   if (!card || !["buy", "sell"].includes(side) || !raw || raw <= 0) {
     return { ok: false, message: "Enter a valid amount." };
   }
-  const { data, error } = await supabase.rpc("execute_trade", {
+  const { data, error } = await supabase.rpc("place_order", {
     p_card: card,
     p_side: side,
-    p_amount: mode === "amount" ? raw : null,
-    p_quantity: mode === "quantity" ? raw : null,
+    p_amount: side === "buy" ? raw : null,
+    p_quantity: side === "sell" ? raw : null,
   });
   if (error) return { ok: false, message: error.message };
   revalidatePath("/", "layout");
-  const r = data as { quantity: number; value: number; fee: number };
+  const r = data as { reserved?: number; est_quantity?: number; quantity?: number };
   return {
     ok: true,
-    message: `${side === "buy" ? "Bought" : "Sold"} ${r.quantity} @ market for $${r.value.toFixed(2)} (fee $${r.fee.toFixed(2)}).`,
+    message:
+      side === "buy"
+        ? `Buy order placed — $${Number(r.reserved ?? raw).toFixed(2)} reserved (incl. 1% fee). Fills at the next daily price update.`
+        : `Sell order placed for ${r.quantity ?? raw} — fills at the next daily price update.`,
   };
+}
+
+export async function cancelOrder(orderId: number): Promise<ActionResult> {
+  const supabase = supabaseServer();
+  const { error } = await supabase.rpc("cancel_order", { p_order_id: orderId });
+  if (error) return { ok: false, message: error.message };
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Order cancelled — reservation released." };
 }
 
 export async function toggleWatch(cardId: string, watched: boolean) {
@@ -288,6 +300,12 @@ export async function updatePricesFromScryfall() {
     await new Promise((r) => setTimeout(r, 150));
   }
 
+  // Fill pending orders at today's freshly written prices, then re-rank.
+  const { data: settlement, error: settleError } = await admin.rpc("settle_pending_orders", {
+    p_price_date: today,
+  });
+  if (settleError) console.error("settle_pending_orders failed:", settleError.message);
+
   await admin.rpc("refresh_season_rankings");
-  return { updated, failed };
+  return { updated, failed, settlement: settlement ?? settleError?.message ?? null };
 }
