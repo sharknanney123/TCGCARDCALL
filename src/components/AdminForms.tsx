@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import {
-  runPriceUpdate, endSeason, startSeason, importCsv, setCardActive, type ActionResult,
+  runPriceUpdate, endSeason, startSeason, importCsv, setCardActive,
+  createTournament, endTournament, type ActionResult,
 } from "@/app/actions";
 
 function useFeedback() {
@@ -112,6 +113,83 @@ export function CardToggle({ cardId, active }: { cardId: string; active: boolean
         onClick={() => run(() => setCardActive(cardId, !active))}>
         {pending ? "…" : active ? "Disable buys" : "Re-enable"}
       </button>
+      <Feedback msg={msg} />
+    </div>
+  );
+}
+
+export function CreateTournamentForm({ categories }: { categories: string[] }) {
+  const { msg, pending, run } = useFeedback();
+  const [f, setF] = useState({
+    name: "", description: "", days: "30", starting_balance: "10000",
+    fee_pct: "1", daily_order_limit: "10", position_cap: "2500",
+    min_order: "10", max_players: "", pool_category: "",
+  });
+  const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
+  const Field = ({ k, label, type = "number", placeholder = "" }:
+    { k: keyof typeof f; label: string; type?: string; placeholder?: string }) => (
+    <label className="text-xs text-faded space-y-1">
+      <span>{label}</span>
+      <input className="input" type={type} value={f[k]} placeholder={placeholder}
+             onChange={(e) => set(k, e.target.value)} />
+    </label>
+  );
+  return (
+    <div className="space-y-3">
+      <div className="grid sm:grid-cols-2 gap-2 max-w-2xl">
+        <Field k="name" label="Tournament name" type="text" placeholder="e.g. Budget Brawl" />
+        <Field k="days" label="Length (days)" />
+        <Field k="starting_balance" label="Starting balance ($)" />
+        <Field k="fee_pct" label="Trading fee (%)" />
+        <Field k="daily_order_limit" label="Orders per day" />
+        <Field k="min_order" label="Minimum order ($)" />
+        <Field k="position_cap" label="Per-card cap ($, blank = none)" type="text" />
+        <Field k="max_players" label="Max players (blank = unlimited)" type="text" />
+        <label className="text-xs text-faded space-y-1 sm:col-span-2">
+          <span>Card pool</span>
+          <select className="input" value={f.pool_category}
+                  onChange={(e) => set("pool_category", e.target.value)}>
+            <option value="">All active cards</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>Only category: {c}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-faded space-y-1 sm:col-span-2">
+          <span>Description (shown on the tournaments page)</span>
+          <input className="input" type="text" value={f.description}
+                 onChange={(e) => set("description", e.target.value)} />
+        </label>
+      </div>
+      <button className="btn-gold" disabled={pending}
+        onClick={() => {
+          const fd = new FormData();
+          Object.entries(f).forEach(([k, v]) => fd.set(k, v));
+          run(() => createTournament(fd));
+        }}>
+        {pending ? "Creating…" : "Create tournament"}
+      </button>
+      <Feedback msg={msg} />
+    </div>
+  );
+}
+
+export function EndTournamentButton({ seasonId, name }: { seasonId: string; name: string }) {
+  const { msg, pending, run } = useFeedback();
+  const [armed, setArmed] = useState(false);
+  return (
+    <div className="space-y-1">
+      {!armed ? (
+        <button className="btn-ghost text-sm" onClick={() => setArmed(true)}>End…</button>
+      ) : (
+        <div className="flex gap-2 items-center flex-wrap">
+          <span className="text-xs text-ember">Liquidate and archive {name}?</span>
+          <button className="btn-sell text-sm" disabled={pending} onClick={() => run(() => endTournament(seasonId))}>
+            {pending ? "Ending…" : "Yes, end it"}
+          </button>
+          <button className="btn-ghost text-sm" onClick={() => setArmed(false)}>Cancel</button>
+        </div>
+      )}
       <Feedback msg={msg} />
     </div>
   );
