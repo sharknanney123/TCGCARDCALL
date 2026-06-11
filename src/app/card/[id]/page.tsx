@@ -1,6 +1,8 @@
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getTournamentContext } from "@/lib/tournament";
 import { usd } from "@/lib/format";
 import PctChip from "@/components/PctChip";
 import WatchButton from "@/components/WatchButton";
@@ -20,11 +22,11 @@ export default async function CardDetail({ params }: { params: { id: string } })
 
   await supabase.rpc("log_event", { p_type: "card_detail_view", p_meta: { card_id: params.id } });
 
-  const { data: season } = await supabase
-    .from("seasons").select("id").eq("status", "active")
-    .order("start_date", { ascending: false }).limit(1).maybeSingle();
+  const ctx = await getTournamentContext(user.id);
+  const season = ctx.current;
+  const joined = !!season && ctx.joined.some((t) => t.id === season.id);
 
-  const [{ data: history }, { data: pos }, { data: pf }, { data: watch }, { data: count }] =
+  const [{ data: history }, { data: pos }, { data: pf }, { data: watch }, { data: count }, { data: poolRows }] =
     await Promise.all([
       supabase.from("price_snapshots").select("price, price_date")
         .eq("card_id", params.id).order("price_date", { ascending: true }).limit(60),
@@ -38,11 +40,20 @@ export default async function CardDetail({ params }: { params: { id: string } })
         : Promise.resolve({ data: null }),
       supabase.from("watchlist").select("card_id")
         .eq("user_id", user.id).eq("card_id", params.id).maybeSingle(),
-      supabase.from("daily_trade_counts").select("trade_count")
-        .eq("user_id", user.id)
-        .eq("day", new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date()))
-        .maybeSingle(),
+      season
+        ? supabase.from("daily_trade_counts").select("trade_count")
+            .eq("user_id", user.id).eq("season_id", season.id)
+            .eq("day", new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date()))
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      season
+        ? supabase.from("season_cards").select("card_id").eq("season_id", season.id)
+        : Promise.resolve({ data: [] as { card_id: string }[] }),
     ]);
+
+  // A tournament with no season_cards rows uses the full card pool.
+  const poolRestricted = (poolRows ?? []).length > 0;
+  const inPool = !poolRestricted || (poolRows ?? []).some((p) => p.card_id === params.id);
 
   const points = (history ?? []).map((h) => Number(h.price));
 
@@ -88,8 +99,24 @@ export default async function CardDetail({ params }: { params: { id: string } })
           </div>
         )}
 
-        {card.current_price && pf && (
+        {season && !joined ? (
+          <p className="text-sm text-faded">
+            You haven&apos;t joined {season.name} yet.{" "}
+            <Link href="/tournaments" className="text-gold hover:underline">Join it</Link> to trade.
+          </p>
+        ) : season && !inPool ? (
+          <p className="text-sm text-faded">
+            This card isn&apos;t in {season.name}&apos;s pool.{" "}
+            <Link href="/tournaments" className="text-gold hover:underline">See tournaments</Link>
+          </p>
+        ) : card.current_price && pf && season ? (
           <TradeModal
+            seasonId={season.id}
+            seasonName={season.name}
+            feePct={Number(season.fee_bps) / 100}
+            dailyLimit={Number(season.daily_order_limit)}
+            positionCap={season.position_cap === null ? null : Number(season.position_cap)}
+            minOrder={Number(season.min_order)}
             cardId={card.card_id}
             cardName={card.card_name}
             price={Number(card.current_price)}
@@ -100,7 +127,7 @@ export default async function CardDetail({ params }: { params: { id: string } })
             cash={Math.max(0, Number(pf.virtual_cash) - Number(pf.reserved_cash ?? 0))}
             tradesToday={Number(count?.trade_count ?? 0)}
           />
-        )}
+        ) : null}
       </div>
     </div>
   );
