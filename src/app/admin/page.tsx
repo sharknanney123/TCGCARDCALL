@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { supabaseServer, supabaseAdmin } from "@/lib/supabase/server";
 import { usd } from "@/lib/format";
 import {
-  RunPriceUpdateButton, EndSeasonButton, StartSeasonForm, CsvUploadForm, CardToggle,
+  RunPriceUpdateButton, CsvUploadForm, CardToggle,
+  CreateTournamentForm, EndTournamentButton,
 } from "@/components/AdminForms";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +18,12 @@ export default async function Admin({ searchParams }: { searchParams: { q?: stri
   const admin = supabaseAdmin();
   const q = searchParams.q?.trim() ?? "";
 
-  const [{ data: season }, { data: audit }, { count: cardCount }, { data: cards },
+  const [{ data: seasons }, { data: memberRows }, { data: catRows }, { data: audit }, { count: cardCount }, { data: cards },
          { data: users }, { data: events }] = await Promise.all([
     admin.from("seasons").select("*").eq("status", "active")
-      .order("start_date", { ascending: false }).limit(1).maybeSingle(),
+      .order("start_date", { ascending: false }),
+    admin.from("portfolios").select("season_id"),
+    admin.from("cards").select("category").eq("active", true),
     admin.from("admin_audit_log").select("*").order("created_at", { ascending: false }).limit(10),
     admin.from("cards").select("*", { count: "exact", head: true }),
     admin.from("v_card_prices").select("*").ilike("card_name", q ? `%${q}%` : "%")
@@ -34,26 +37,39 @@ export default async function Admin({ searchParams }: { searchParams: { q?: stri
   const eventCounts = new Map<string, number>();
   for (const e of events ?? []) eventCounts.set(e.event_type, (eventCounts.get(e.event_type) ?? 0) + 1);
 
+  const memberCount = new Map<string, number>();
+  for (const m of memberRows ?? []) memberCount.set(m.season_id, (memberCount.get(m.season_id) ?? 0) + 1);
+  const categories = Array.from(new Set((catRows ?? []).map((c) => c.category).filter(Boolean))).sort();
+
   return (
     <div className="space-y-8">
       <h1 className="font-display text-2xl">Admin</h1>
 
       <section className="panel p-4 space-y-4">
-        <h2 className="font-display text-lg">Season</h2>
-        {season ? (
-          <>
-            <p className="text-sm">
-              <span className="text-gold">{season.name}</span> is live —
-              {" "}{season.start_date} to {season.end_date}, starting balance {usd(season.starting_balance)}.
-            </p>
-            <EndSeasonButton />
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-faded">No active season.</p>
-            <StartSeasonForm />
-          </>
+        <h2 className="font-display text-lg">Tournaments ({(seasons ?? []).length} live)</h2>
+        {(seasons ?? []).length > 0 && (
+          <ul className="space-y-2">
+            {(seasons ?? []).map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-3 flex-wrap text-sm border-b border-edge pb-2">
+                <span>
+                  <span className="text-gold">{s.name}</span>{" "}
+                  <span className="text-faded">
+                    — {s.start_date} → {s.end_date} · {usd(s.starting_balance)} ·{" "}
+                    {(Number(s.fee_bps) / 100).toFixed(2)}% fee · {s.daily_order_limit}/day ·{" "}
+                    {memberCount.get(s.id) ?? 0} players
+                  </span>
+                </span>
+                <EndTournamentButton seasonId={s.id} name={s.name} />
+              </li>
+            ))}
+          </ul>
         )}
+        <details>
+          <summary className="cursor-pointer text-sm text-gold">Create a new tournament</summary>
+          <div className="pt-3">
+            <CreateTournamentForm categories={categories} />
+          </div>
+        </details>
       </section>
 
       <section className="panel p-4 space-y-4">
