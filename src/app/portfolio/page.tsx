@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getTournamentContext } from "@/lib/tournament";
 import { usd, pct, qty, gainClass } from "@/lib/format";
 import PctChip from "@/components/PctChip";
 import PendingOrders from "@/components/PendingOrders";
@@ -11,10 +12,17 @@ export default async function Portfolio() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: season } = await supabase
-    .from("seasons").select("id, name").eq("status", "active")
-    .order("start_date", { ascending: false }).limit(1).maybeSingle();
-  if (!season) return <p className="text-faded py-12 text-center">No active season.</p>;
+  const ctx = await getTournamentContext(user.id);
+  const season = ctx.current;
+  if (!season) return <p className="text-faded py-12 text-center">No active tournament.</p>;
+  if (!ctx.joined.some((t) => t.id === season.id)) {
+    return (
+      <p className="text-faded py-12 text-center">
+        You haven&apos;t joined {season.name} yet —{" "}
+        <Link href="/tournaments" className="text-gold hover:underline">join it here</Link>.
+      </p>
+    );
+  }
 
   const [{ data: pf }, { data: positions }, { data: trades }, { data: pendingRaw }] = await Promise.all([
     supabase.from("portfolios").select("*").eq("user_id", user.id).eq("season_id", season.id).maybeSingle(),
