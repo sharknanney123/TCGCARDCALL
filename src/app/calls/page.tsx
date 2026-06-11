@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getTournamentContext } from "@/lib/tournament";
 import { usd, gainClass } from "@/lib/format";
 import PctChip from "@/components/PctChip";
 
@@ -12,10 +13,9 @@ export default async function BiggestCalls() {
 
   await supabase.rpc("log_event", { p_type: "biggest_calls_view", p_meta: {} });
 
-  const { data: season } = await supabase
-    .from("seasons").select("id, name").eq("status", "active")
-    .order("start_date", { ascending: false }).limit(1).maybeSingle();
-  if (!season) return <p className="text-faded py-12 text-center">No active season.</p>;
+  const ctx = await getTournamentContext(user.id);
+  const season = ctx.current;
+  if (!season) return <p className="text-faded py-12 text-center">No active tournament.</p>;
 
   const { data: calls } = await supabase
     .from("v_biggest_calls").select("*").eq("season_id", season.id)
