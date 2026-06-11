@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getTournamentContext } from "@/lib/tournament";
 import { usd } from "@/lib/format";
 import PctChip from "@/components/PctChip";
 import WatchButton from "@/components/WatchButton";
@@ -29,7 +30,19 @@ export default async function Market({
   const sort = SORTS.some((s) => s.key === searchParams.sort) ? searchParams.sort! : "movers";
   const watchedOnly = searchParams.watched === "1";
 
+  const ctx = await getTournamentContext(user.id);
+  const season = ctx.current;
+
+  // Restrict to this tournament's pool when one is defined.
+  let poolIds: string[] | null = null;
+  if (season) {
+    const { data: pool } = await supabase
+      .from("season_cards").select("card_id").eq("season_id", season.id);
+    if (pool && pool.length > 0) poolIds = pool.map((p) => p.card_id);
+  }
+
   let query = supabase.from("v_card_prices").select("*").eq("active", true).limit(120);
+  if (poolIds) query = query.in("card_id", poolIds);
   if (q) query = query.ilike("card_name", `%${q}%`);
   if (cat !== "all") query = query.eq("category", cat);
   if (sort === "name") query = query.order("card_name");
@@ -52,7 +65,14 @@ export default async function Market({
 
   return (
     <div className="space-y-4">
-      <h1 className="font-display text-2xl">Market</h1>
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <h1 className="font-display text-2xl">Market</h1>
+        {season && (
+          <p className="text-sm text-faded">
+            {season.name}{poolIds ? ` · ${poolIds.length}-card pool` : ""}
+          </p>
+        )}
+      </div>
 
       <form className="flex gap-2" action="/market">
         <input className="input" name="q" defaultValue={q} placeholder="Search 500 Magic cards…" />
