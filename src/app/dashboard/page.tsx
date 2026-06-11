@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getTournamentContext } from "@/lib/tournament";
+import TournamentJoin from "@/components/TournamentJoin";
 import { usd, pct, qty, gainClass } from "@/lib/format";
 import PctChip from "@/components/PctChip";
 
@@ -22,22 +24,20 @@ export default async function Dashboard() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  // Join the active season on first visit; log the login event.
-  await supabase.rpc("join_active_season");
   await supabase.rpc("log_event", { p_type: "login", p_meta: {} });
 
-  const { data: season } = await supabase
-    .from("seasons").select("id, name, end_date").eq("status", "active")
-    .order("start_date", { ascending: false }).limit(1).maybeSingle();
+  const ctx = await getTournamentContext(user.id);
+  const season = ctx.current;
 
   if (!season) {
     return (
       <div className="py-16 text-center space-y-3">
-        <h1 className="font-display text-2xl">No season is live right now</h1>
-        <p className="text-faded">The next season will appear here when it starts.</p>
+        <h1 className="font-display text-2xl">No tournament is live right now</h1>
+        <p className="text-faded">The next one will appear here when it starts.</p>
       </div>
     );
   }
+  const joined = ctx.joined.some((t) => t.id === season.id);
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
@@ -94,8 +94,17 @@ export default async function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
         <h1 className="font-display text-2xl">{season.name}</h1>
-        <p className="text-sm text-faded">Season ends {season.end_date}</p>
+        <p className="text-sm text-faded">
+          Ends {season.end_date} · <Link href="/tournaments" className="text-gold hover:underline">All tournaments</Link>
+        </p>
       </div>
+
+      {!joined && (
+        <section className="panel p-4 border-gold/40 flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-sm">You haven&apos;t joined <span className="text-gold">{season.name}</span> yet — join to start trading.</p>
+          <TournamentJoin seasonId={season.id} joined={false} viewing={false} />
+        </section>
+      )}
 
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="panel p-4">
