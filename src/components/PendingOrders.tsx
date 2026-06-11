@@ -33,7 +33,20 @@ export default function PendingOrders({ orders }: { orders: PendingOrder[] }) {
         <h2 className="font-display text-lg">Pending orders</h2>
         <p className="text-xs text-faded">Fill at the next daily price update</p>
       </div>
-      <table className="w-full min-w-[520px]">
+      {/* Mobile */}
+      <div className="sm:hidden px-4 pb-3 pt-2 space-y-2">
+        {orders.map((o) => (
+          <div key={o.id} className="flex items-center justify-between gap-2 text-sm">
+            <span className="truncate">
+              <span className={`font-mono uppercase text-xs mr-1 ${o.side === "buy" ? "text-jade" : "text-ember"}`}>{o.side}</span>
+              {o.card_name} — <span className="font-mono">{o.side === "buy" ? usd(o.credit_amount) : `${qty(o.quantity)} qty`}</span>
+            </span>
+            <button className="btn-ghost text-xs" disabled={pending} onClick={() => cancel(o.id)}>Cancel</button>
+          </div>
+        ))}
+      </div>
+
+      <table className="w-full min-w-[520px] hidden sm:table">
         <thead><tr>
           <th className="th">Card</th><th className="th">Side</th>
           <th className="th">Order</th><th className="th">Placed</th><th className="th"></th>

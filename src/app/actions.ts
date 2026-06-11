@@ -203,13 +203,23 @@ export async function endSeason(): Promise<ActionResult> {
 
 // ---------------- Tournaments ----------------
 
-export async function joinTournament(seasonId: string): Promise<ActionResult> {
+export async function joinTournament(seasonId: string, code?: string): Promise<ActionResult> {
   const supabase = supabaseServer();
-  const { error } = await supabase.rpc("join_season", { p_season: seasonId });
+  const { error } = await supabase.rpc("join_season", { p_season: seasonId, p_code: code ?? null });
   if (error) return { ok: false, message: error.message };
   cookies().set(TOURNAMENT_COOKIE, seasonId, { path: "/", maxAge: 60 * 60 * 24 * 90 });
   revalidatePath("/", "layout");
   return { ok: true, message: "Joined — you're in. Good luck!" };
+}
+
+export async function joinByCode(code: string): Promise<ActionResult> {
+  const supabase = supabaseServer();
+  const trimmed = code.trim();
+  if (!trimmed) return { ok: false, message: "Enter an invite code." };
+  const { data: seasonId, error: findErr } = await supabase
+    .rpc("find_tournament_by_code", { p_code: trimmed });
+  if (findErr || !seasonId) return { ok: false, message: "No open tournament matches that code." };
+  return joinTournament(String(seasonId), trimmed);
 }
 
 export async function switchTournament(seasonId: string): Promise<ActionResult> {
@@ -237,6 +247,7 @@ export async function createTournament(formData: FormData): Promise<ActionResult
     const minOrder = Number(formData.get("min_order") ?? 10);
     const maxPlayersRaw = String(formData.get("max_players") ?? "").trim();
     const poolCategory = String(formData.get("pool_category") ?? "").trim();
+    const isPrivate = String(formData.get("is_private") ?? "") === "true";
 
     if (!name) return { ok: false, message: "Name the tournament." };
     if (!(days >= 3 && days <= 120)) return { ok: false, message: "Length must be 3–120 days." };
@@ -259,7 +270,11 @@ export async function createTournament(formData: FormData): Promise<ActionResult
       position_cap: positionCapRaw ? Number(positionCapRaw) : null,
       min_order: minOrder,
       max_players: maxPlayersRaw ? Number(maxPlayersRaw) : null,
-    }).select("id").single();
+      is_private: isPrivate,
+      invite_code: isPrivate
+        ? Array.from({ length: 6 }, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("")
+        : null,
+    }).select("id, invite_code").single();
     if (error || !season) return { ok: false, message: error?.message ?? "Insert failed." };
 
     let poolSize: number | null = null;
@@ -281,7 +296,8 @@ export async function createTournament(formData: FormData): Promise<ActionResult
     revalidatePath("/", "layout");
     return {
       ok: true,
-      message: `${name} is live${poolSize ? ` with a ${poolSize}-card pool` : " (full card pool)"}.`,
+      message: `${name} is live${poolSize ? ` with a ${poolSize}-card pool` : " (full card pool)"}${
+        season.invite_code ? `. PRIVATE — invite code: ${season.invite_code}` : ""}.`,
     };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Failed." };

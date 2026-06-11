@@ -85,7 +85,27 @@ export default async function Portfolio() {
 
       <PendingOrders orders={pendingOrders} />
 
-      <section className="panel overflow-x-auto">
+      {/* Mobile: stacked cards */}
+      <section className="sm:hidden space-y-2">
+        {rows.map((r) => (
+          <div key={r.card_id} className="panel p-3">
+            <div className="flex justify-between items-baseline gap-2">
+              <Link href={`/card/${r.card_id}`} className="hover:text-gold truncate">{r.card?.card_name ?? "—"}</Link>
+              <PctChip value={r.card?.pct_change} />
+            </div>
+            <div className="flex justify-between text-sm font-mono mt-1">
+              <span className="text-faded">{qty(r.quantity)} @ {usd(r.average_buy_price)}</span>
+              <span>{usd(r.value)} <span className={gainClass(r.unreal)}>({usd(r.unreal)})</span></span>
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && (
+          <p className="text-sm text-faded">No positions yet — head to the <Link href="/market" className="text-gold hover:underline">market</Link>.</p>
+        )}
+      </section>
+
+      {/* Desktop: table */}
+      <section className="panel overflow-x-auto hidden sm:block">
         <table className="w-full min-w-[640px]">
           <thead><tr>
             <th className="th">Card</th><th className="th">Qty</th><th className="th">Avg buy</th>

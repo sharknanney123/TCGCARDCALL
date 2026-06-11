@@ -123,7 +123,7 @@ export function CreateTournamentForm({ categories }: { categories: string[] }) {
   const [f, setF] = useState({
     name: "", description: "", days: "30", starting_balance: "10000",
     fee_pct: "1", daily_order_limit: "10", position_cap: "2500",
-    min_order: "10", max_players: "", pool_category: "",
+    min_order: "10", max_players: "", pool_category: "", is_private: "",
   });
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
   const Field = ({ k, label, type = "number", placeholder = "" }:
@@ -154,6 +154,11 @@ export function CreateTournamentForm({ categories }: { categories: string[] }) {
               <option key={c} value={c}>Only category: {c}</option>
             ))}
           </select>
+        </label>
+        <label className="text-xs text-faded flex items-center gap-2 sm:col-span-2">
+          <input type="checkbox" checked={f.is_private === "true"}
+                 onChange={(e) => set("is_private", e.target.checked ? "true" : "")} />
+          <span>Private — joinable only with an invite code (generated on creation)</span>
         </label>
         <label className="text-xs text-faded space-y-1 sm:col-span-2">
           <span>Description (shown on the tournaments page)</span>

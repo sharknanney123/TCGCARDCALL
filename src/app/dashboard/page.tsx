@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
 import { getTournamentContext } from "@/lib/tournament";
+import { cookies } from "next/headers";
+import HowItWorks from "@/components/HowItWorks";
 import TournamentJoin from "@/components/TournamentJoin";
 import { usd, pct, qty, gainClass } from "@/lib/format";
 import PctChip from "@/components/PctChip";
@@ -38,6 +40,7 @@ export default async function Dashboard() {
     );
   }
   const joined = ctx.joined.some((t) => t.id === season.id);
+  const showOnboarding = !cookies().get("tcc_onboarded");
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
@@ -105,6 +108,8 @@ export default async function Dashboard() {
           <TournamentJoin seasonId={season.id} joined={false} viewing={false} />
         </section>
       )}
+
+      {showOnboarding && <HowItWorks />}
 
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="panel p-4">

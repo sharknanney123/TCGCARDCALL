@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getTournamentContext } from "@/lib/tournament";
 import { usd, pct, qty, gainClass } from "@/lib/format";
 import PctChip from "@/components/PctChip";
 
@@ -17,16 +18,19 @@ export default async function PublicProfile({ params }: { params: { username: st
 
   await supabase.rpc("log_event", { p_type: "public_profile_view", p_meta: { viewed: profile.id } });
 
-  const { data: season } = await supabase
-    .from("seasons").select("id, name").eq("status", "active")
-    .order("start_date", { ascending: false }).limit(1).maybeSingle();
-  if (!season) return <p className="text-faded py-12 text-center">No active season.</p>;
+  const ctx = await getTournamentContext(user.id);
+  const season = ctx.current;
+  if (!season) return <p className="text-faded py-12 text-center">No active tournament.</p>;
 
-  const [{ data: pf }, { data: positions }, { data: calls }] = await Promise.all([
+  const [{ data: pf }, { data: positions }, { data: calls }, { data: trophies }] = await Promise.all([
     supabase.from("portfolios").select("*").eq("user_id", profile.id).eq("season_id", season.id).maybeSingle(),
     supabase.from("positions").select("*").eq("user_id", profile.id).eq("season_id", season.id).gt("quantity", 0),
     supabase.from("v_biggest_calls").select("*").eq("season_id", season.id).eq("user_id", profile.id)
       .order("gain_pct", { ascending: false }).limit(5),
+    supabase.from("season_results")
+      .select("final_rank, final_percent_gain, seasons(name)")
+      .eq("user_id", profile.id).not("final_rank", "is", null).lte("final_rank", 3)
+      .order("final_rank", { ascending: true }).limit(6),
   ]);
 
   const ids = (positions ?? []).map((p) => p.card_id);
@@ -41,6 +45,14 @@ export default async function PublicProfile({ params }: { params: { username: st
         <h1 className="font-display text-2xl">@{profile.username}</h1>
         {pf?.rank && <span className="chip text-gold border-gold/50">Rank #{pf.rank}</span>}
         {pf?.late_joiner && <span className="chip-flat">late joiner</span>}
+        {(trophies ?? []).map((t, i) => {
+          const sName = Array.isArray(t.seasons) ? t.seasons[0]?.name : (t.seasons as { name?: string } | null)?.name;
+          return (
+            <span key={i} className="chip text-gold border-gold/50" title={`Finished #${t.final_rank} in ${sName}`}>
+              {Number(t.final_rank) === 1 ? "🥇" : Number(t.final_rank) === 2 ? "🥈" : "🥉"} {sName}
+            </span>
+          );
+        })}
       </div>
 
       <section className="grid grid-cols-2 lg:grid-cols-3 gap-3 max-w-xl">

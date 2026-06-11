@@ -2,6 +2,8 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { getTournamentContext } from "@/lib/tournament";
 import { usd } from "@/lib/format";
 import TournamentJoin from "@/components/TournamentJoin";
+import JoinByCode from "@/components/JoinByCode";
+import { pct, gainClass } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -27,9 +29,25 @@ export default async function Tournaments() {
     seasonIds.length
       ? supabase.from("season_cards").select("season_id").in("season_id", seasonIds)
       : Promise.resolve({ data: [] as { season_id: string }[] }),
-    supabase.from("seasons").select("name, start_date, end_date").eq("status", "archived")
+    supabase.from("seasons").select("id, name, start_date, end_date").eq("status", "archived")
       .order("end_date", { ascending: false }).limit(5),
   ]);
+
+  // Past podiums: top-3 finishers of recent archived tournaments
+  const archivedIds = (archived ?? []).map((a) => a.id);
+  const { data: results } = archivedIds.length
+    ? await supabase.from("season_results")
+        .select("season_id, final_rank, final_percent_gain, profiles(username)")
+        .in("season_id", archivedIds).not("final_rank", "is", null).lte("final_rank", 3)
+        .order("final_rank", { ascending: true })
+    : { data: [] as never[] };
+  const podium = new Map<string, { rank: number; username: string; gain: number }[]>();
+  for (const r of results ?? []) {
+    const u = Array.isArray(r.profiles) ? r.profiles[0]?.username : (r.profiles as { username?: string } | null)?.username;
+    const list = podium.get(r.season_id) ?? [];
+    list.push({ rank: Number(r.final_rank), username: u ?? "—", gain: Number(r.final_percent_gain) });
+    podium.set(r.season_id, list);
+  }
 
   const playerCount = new Map<string, number>();
   for (const m of members ?? []) playerCount.set(m.season_id, (playerCount.get(m.season_id) ?? 0) + 1);
@@ -46,18 +64,20 @@ export default async function Tournaments() {
         </p>
       </div>
 
+      <JoinByCode />
+
       <div className="grid md:grid-cols-2 gap-4">
-        {(active ?? []).map((s) => {
+        {(active ?? []).filter((s) => !s.is_private || joinedIds.has(s.id)).map((s) => {
           const pool = poolSize.get(s.id) ?? 0;
           const players = playerCount.get(s.id) ?? 0;
           return (
             <section key={s.id} className={`panel p-5 space-y-3 ${ctx.current?.id === s.id ? "border-gold/40" : ""}`}>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <h2 className="font-display text-lg">{s.name}</h2>
+                  <h2 className="font-display text-lg">{s.name}{s.is_private && <span className="chip-flat ml-2">private</span>}</h2>
                   <p className="text-xs text-faded">{s.start_date} → {s.end_date}</p>
                 </div>
-                <TournamentJoin seasonId={s.id} joined={joinedIds.has(s.id)} viewing={ctx.current?.id === s.id} />
+                <TournamentJoin seasonId={s.id} joined={joinedIds.has(s.id)} viewing={ctx.current?.id === s.id} isPrivate={!!s.is_private} />
               </div>
 
               {s.description && <p className="text-sm text-faded">{s.description}</p>}
@@ -87,9 +107,21 @@ export default async function Tournaments() {
       {(archived ?? []).length > 0 && (
         <section className="panel p-4">
           <h2 className="font-display text-lg mb-2">Past tournaments</h2>
-          <ul className="text-sm text-faded space-y-1">
+          <ul className="text-sm space-y-3">
             {(archived ?? []).map((s) => (
-              <li key={s.name}>{s.name} — {s.start_date} → {s.end_date}</li>
+              <li key={s.id}>
+                <p className="text-faded">{s.name} — {s.start_date} → {s.end_date}</p>
+                {(podium.get(s.id) ?? []).length > 0 && (
+                  <p className="text-xs mt-0.5 space-x-3">
+                    {(podium.get(s.id) ?? []).map((w) => (
+                      <span key={w.rank}>
+                        {w.rank === 1 ? "🥇" : w.rank === 2 ? "🥈" : "🥉"} @{w.username}{" "}
+                        <span className={`font-mono ${gainClass(w.gain)}`}>{pct(w.gain)}</span>
+                      </span>
+                    ))}
+                  </p>
+                )}
+              </li>
             ))}
           </ul>
         </section>

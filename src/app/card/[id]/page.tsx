@@ -85,6 +85,12 @@ export default async function CardDetail({ params }: { params: { id: string } })
         </div>
         <p className="text-xs text-faded">
           Last priced {card.price_date ?? "never"} · previous {card.previous_price ? usd(card.previous_price) : "—"}
+          {" · "}
+          <a className="text-gold hover:underline" target="_blank" rel="noreferrer"
+             href={`https://scryfall.com/search?q=${encodeURIComponent(`!"${card.card_name}"`)}`}>Scryfall</a>
+          {" · "}
+          <a className="text-gold hover:underline" target="_blank" rel="noreferrer"
+             href={`https://edhrec.com/cards/${card.card_name.toLowerCase().replace(/[',.]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`}>EDHREC</a>
         </p>
 
         <div className="panel p-4">

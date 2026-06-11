@@ -31,7 +31,23 @@ export default async function Leaderboard() {
         joined after the first week are listed separately.
       </p>
 
-      <section className="panel overflow-x-auto">
+      {/* Mobile: stacked rows */}
+      <section className="sm:hidden space-y-1.5">
+        {ranked.map((r) => (
+          <div key={r.user_id} className={`panel p-3 flex items-center justify-between gap-2 ${r.user_id === user.id ? "border-gold/40" : ""}`}>
+            <span className="truncate">
+              <span className="font-mono text-gold mr-2">#{r.rank ?? "—"}</span>
+              <Link href={`/u/${r.username}`} className="hover:text-gold">@{r.username}</Link>
+            </span>
+            <span className={`font-mono text-sm ${gainClass(r.percent_gain)}`}>{pct(r.percent_gain)}</span>
+          </div>
+        ))}
+        {ranked.length === 0 && (
+          <p className="text-sm text-faded">No qualified players yet — trade 3 distinct cards to claim rank #1.</p>
+        )}
+      </section>
+
+      <section className="panel overflow-x-auto hidden sm:block">
         <table className="w-full min-w-[520px]">
           <thead><tr>
             <th className="th">#</th><th className="th">Player</th>

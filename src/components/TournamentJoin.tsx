@@ -4,21 +4,25 @@ import { useState, useTransition } from "react";
 import { joinTournament, switchTournament } from "@/app/actions";
 
 export default function TournamentJoin({
-  seasonId,
-  joined,
-  viewing,
+  seasonId, joined, viewing, isPrivate = false,
 }: {
-  seasonId: string;
-  joined: boolean;
-  viewing: boolean;
+  seasonId: string; joined: boolean; viewing: boolean; isPrivate?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+  const [code, setCode] = useState("");
 
-  function act(fn: (id: string) => Promise<{ ok: boolean; message: string }>) {
+  function join() {
     setMsg(null);
     startTransition(async () => {
-      const res = await fn(seasonId);
+      const res = await joinTournament(seasonId, isPrivate ? code : undefined);
+      if (!res.ok) setMsg(res.message);
+    });
+  }
+  function switchTo() {
+    setMsg(null);
+    startTransition(async () => {
+      const res = await switchTournament(seasonId);
       if (!res.ok) setMsg(res.message);
     });
   }
@@ -28,13 +32,19 @@ export default function TournamentJoin({
       {viewing ? (
         <span className="chip text-jade border-jade/40">Currently viewing</span>
       ) : joined ? (
-        <button className="btn-ghost" disabled={pending} onClick={() => act(switchTournament)}>
+        <button className="btn-ghost" disabled={pending} onClick={switchTo}>
           {pending ? "Switching…" : "Switch to view"}
         </button>
       ) : (
-        <button className="btn-gold" disabled={pending} onClick={() => act(joinTournament)}>
-          {pending ? "Joining…" : "Join tournament"}
-        </button>
+        <div className="flex gap-2 items-center">
+          {isPrivate && (
+            <input className="input w-28 font-mono uppercase" placeholder="Code"
+                   value={code} onChange={(e) => setCode(e.target.value)} />
+          )}
+          <button className="btn-gold" disabled={pending || (isPrivate && !code.trim())} onClick={join}>
+            {pending ? "Joining…" : "Join"}
+          </button>
+        </div>
       )}
       {msg && <p className="text-xs text-ember">{msg}</p>}
     </div>

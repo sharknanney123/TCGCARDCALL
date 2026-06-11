@@ -18,13 +18,15 @@ export default async function Admin({ searchParams }: { searchParams: { q?: stri
   const admin = supabaseAdmin();
   const q = searchParams.q?.trim() ?? "";
 
-  const [{ data: seasons }, { data: memberRows }, { data: catRows }, { data: audit }, { count: cardCount }, { data: cards },
+  const [{ data: seasons }, { data: memberRows }, { data: catRows }, { data: audit }, { data: lastCron }, { count: cardCount }, { data: cards },
          { data: users }, { data: events }] = await Promise.all([
     admin.from("seasons").select("*").eq("status", "active")
       .order("start_date", { ascending: false }),
     admin.from("portfolios").select("season_id"),
     admin.from("cards").select("category").eq("active", true),
     admin.from("admin_audit_log").select("*").order("created_at", { ascending: false }).limit(10),
+    admin.from("admin_audit_log").select("created_at").eq("action", "cron_price_update")
+      .order("created_at", { ascending: false }).limit(1).maybeSingle(),
     admin.from("cards").select("*", { count: "exact", head: true }),
     admin.from("v_card_prices").select("*").ilike("card_name", q ? `%${q}%` : "%")
       .order("card_name").limit(30),
@@ -78,6 +80,17 @@ export default async function Admin({ searchParams }: { searchParams: { q?: stri
           The daily cron hits /api/cron/update-prices. Run it manually here, or import a CSV if
           Scryfall data is unavailable or wrong.
         </p>
+        {(() => {
+          const last = lastCron?.created_at ? new Date(lastCron.created_at) : null;
+          const stale = !last || Date.now() - last.getTime() > 26 * 3600 * 1000;
+          return (
+            <p className={`text-sm ${stale ? "text-ember" : "text-jade"}`}>
+              {last
+                ? `Last automatic price update: ${last.toLocaleString()}${stale ? " — OVERDUE, check the Vercel cron!" : ""}`
+                : "No automatic price update has run yet — check the Vercel cron configuration."}
+            </p>
+          );
+        })()}
         <RunPriceUpdateButton />
         <CsvUploadForm />
       </section>
