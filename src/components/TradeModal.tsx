@@ -4,6 +4,12 @@ import { useState, useTransition } from "react";
 import { placeTrade } from "@/app/actions";
 
 type Props = {
+  seasonId: string;
+  seasonName: string;
+  feePct: number;         // e.g. 1 = 1%
+  dailyLimit: number;
+  positionCap: number | null;  // null = uncapped
+  minOrder: number;
   cardId: string;
   cardName: string;
   price: number;          // latest snapshot price (estimate for the fill)
@@ -23,14 +29,15 @@ export default function TradeModal(props: Props) {
   const [pending, startTransition] = useTransition();
 
   const num = parseFloat(value) || 0;
+  const feeRate = props.feePct / 100;
   // Buys are entered in dollars; sells in quantity. Fill price is unknown
   // until the next daily update, so everything below is an estimate.
   const estValue = side === "buy" ? num : num * props.price;
-  const estFee = Math.round(estValue * 0.01 * 100) / 100;
-  const reserved = side === "buy" ? Math.round((num + num * 0.01) * 100) / 100 : 0;
+  const estFee = Math.round(estValue * feeRate * 100) / 100;
+  const reserved = side === "buy" ? Math.round((num + num * feeRate) * 100) / 100 : 0;
   const estQty = side === "buy" && props.price > 0 ? num / props.price : num;
-  const headroom = Math.max(0, 2500 - props.costBasis);
-  const tradesLeft = Math.max(0, 10 - props.tradesToday);
+  const headroom = props.positionCap === null ? null : Math.max(0, props.positionCap - props.costBasis);
+  const tradesLeft = Math.max(0, props.dailyLimit - props.tradesToday);
   const canTrade = props.priceFresh && tradesLeft > 0 && (side === "sell" || props.active);
 
   function pick(next: "buy" | "sell") {
@@ -42,6 +49,7 @@ export default function TradeModal(props: Props) {
   function submit() {
     setMsg(null);
     const fd = new FormData();
+    fd.set("season_id", props.seasonId);
     fd.set("card_id", props.cardId);
     fd.set("side", side);
     fd.set("value", value);
@@ -62,7 +70,7 @@ export default function TradeModal(props: Props) {
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="font-display text-lg">{props.cardName}</h2>
-                <p className="font-mono text-sm text-faded">${props.price.toFixed(2)} latest price</p>
+                <p className="font-mono text-sm text-faded">${props.price.toFixed(2)} latest price · {props.seasonName}</p>
               </div>
               <button className="text-faded hover:text-parchment" onClick={() => setOpen(false)} aria-label="Close">✕</button>
             </div>
@@ -90,7 +98,7 @@ export default function TradeModal(props: Props) {
             <input
               className="input font-mono"
               type="number" min="0" step={side === "buy" ? "1" : "0.0001"}
-              placeholder={side === "buy" ? "Dollars to invest (min $10)" : "Quantity to sell"}
+              placeholder={side === "buy" ? `Dollars to invest (min $${props.minOrder})` : "Quantity to sell"}
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
@@ -99,34 +107,36 @@ export default function TradeModal(props: Props) {
               {side === "buy" ? (
                 <>
                   <div className="flex justify-between"><dt className="text-faded">Est. quantity</dt><dd>{estQty.toFixed(4)}</dd></div>
-                  <div className="flex justify-between"><dt className="text-faded">1% fee (est.)</dt><dd>${estFee.toFixed(2)}</dd></div>
+                  <div className="flex justify-between"><dt className="text-faded">{props.feePct}% fee (est.)</dt><dd>${estFee.toFixed(2)}</dd></div>
                   <div className="flex justify-between">
                     <dt className="text-faded">Reserved now (incl. fee)</dt>
                     <dd className="text-gold">${reserved.toFixed(2)}</dd>
                   </div>
                   <div className="flex justify-between"><dt className="text-faded">Available cash after</dt>
                     <dd>${(props.cash - reserved).toFixed(2)}</dd></div>
-                  <div className="flex justify-between"><dt className="text-faded">Cap headroom ($2,500/card)</dt>
-                    <dd className={num > headroom ? "text-ember" : ""}>${headroom.toFixed(2)}</dd></div>
+                  {headroom !== null && (
+                    <div className="flex justify-between"><dt className="text-faded">Cap headroom (per card)</dt>
+                      <dd className={num > headroom ? "text-ember" : ""}>${headroom.toFixed(2)}</dd></div>
+                  )}
                 </>
               ) : (
                 <>
                   <div className="flex justify-between"><dt className="text-faded">Est. value</dt><dd>${estValue.toFixed(2)}</dd></div>
-                  <div className="flex justify-between"><dt className="text-faded">1% fee (est.)</dt><dd>${estFee.toFixed(2)}</dd></div>
+                  <div className="flex justify-between"><dt className="text-faded">{props.feePct}% fee (est.)</dt><dd>${estFee.toFixed(2)}</dd></div>
                   <div className="flex justify-between">
                     <dt className="text-faded">Est. you receive</dt>
                     <dd className="text-gold">${(estValue - estFee).toFixed(2)}</dd>
                   </div>
                 </>
               )}
-              <div className="flex justify-between"><dt className="text-faded">Orders left today</dt><dd>{tradesLeft} / 10</dd></div>
+              <div className="flex justify-between"><dt className="text-faded">Orders left today</dt><dd>{tradesLeft} / {props.dailyLimit}</dd></div>
             </dl>
 
             {msg && <p className={`text-sm ${msg.ok ? "text-jade" : "text-ember"}`}>{msg.text}</p>}
 
             <button className={side === "buy" ? "btn-buy w-full" : "btn-sell w-full"}
                     onClick={submit}
-                    disabled={pending || !canTrade || estValue < 10 || (side === "sell" && num > props.ownedQty)}>
+                    disabled={pending || !canTrade || estValue < props.minOrder || (side === "sell" && num > props.ownedQty)}>
               {pending ? "Placing…" : `Place ${side} order`}
             </button>
             <p className="text-xs text-faded text-center">
