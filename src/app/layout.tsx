@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getTournamentContext } from "@/lib/tournament";
+import TournamentSwitcher from "@/components/TournamentSwitcher";
 
 export const metadata: Metadata = {
   title: "TCGCardCall — Call the next card spike",
@@ -11,6 +13,7 @@ export const metadata: Metadata = {
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/tournaments", label: "Tournaments" },
   { href: "/market", label: "Market" },
   { href: "/portfolio", label: "Portfolio" },
   { href: "/leaderboard", label: "Leaderboard" },
@@ -23,11 +26,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const { data: { user } } = await supabase.auth.getUser();
   let isAdmin = false;
   let username: string | null = null;
+  let switcher: { tournaments: { id: string; name: string }[]; currentId: string | null } | null = null;
   if (user) {
     const { data: profile } = await supabase
       .from("profiles").select("username, role").eq("id", user.id).single();
     isAdmin = profile?.role === "admin";
     username = profile?.username ?? null;
+    const ctx = await getTournamentContext(user.id);
+    switcher = {
+      tournaments: ctx.joined.map((t) => ({ id: t.id, name: t.name })),
+      currentId: ctx.current?.id ?? null,
+    };
   }
 
   return (
@@ -63,6 +72,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </nav>
             )}
             <div className="ml-auto flex items-center gap-3 text-sm">
+              {user && switcher && (
+                <TournamentSwitcher tournaments={switcher.tournaments} currentId={switcher.currentId} />
+              )}
               {user ? (
                 <>
                   {username && (

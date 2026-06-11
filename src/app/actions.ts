@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { supabaseServer, supabaseAdmin } from "@/lib/supabase/server";
+import { TOURNAMENT_COOKIE } from "@/lib/tournament";
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -195,6 +197,101 @@ export async function endSeason(): Promise<ActionResult> {
   if (error) return { ok: false, message: error.message };
   revalidatePath("/", "layout");
   return { ok: true, message: "Season ended: positions liquidated, standings archived." };
+}
+
+// ---------------- Tournaments ----------------
+
+export async function joinTournament(seasonId: string): Promise<ActionResult> {
+  const supabase = supabaseServer();
+  const { error } = await supabase.rpc("join_season", { p_season: seasonId });
+  if (error) return { ok: false, message: error.message };
+  cookies().set(TOURNAMENT_COOKIE, seasonId, { path: "/", maxAge: 60 * 60 * 24 * 90 });
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Joined — you're in. Good luck!" };
+}
+
+export async function switchTournament(seasonId: string): Promise<ActionResult> {
+  const supabase = supabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, message: "Not signed in." };
+  const { data } = await supabase
+    .from("portfolios").select("season_id").eq("user_id", user.id).eq("season_id", seasonId).maybeSingle();
+  if (!data) return { ok: false, message: "Join that tournament first." };
+  cookies().set(TOURNAMENT_COOKIE, seasonId, { path: "/", maxAge: 60 * 60 * 24 * 90 });
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Switched." };
+}
+
+export async function createTournament(formData: FormData): Promise<ActionResult> {
+  try {
+    const adminId = await requireAdmin();
+    const name = String(formData.get("name") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim() || null;
+    const days = Number(formData.get("days") ?? 30);
+    const startingBalance = Number(formData.get("starting_balance") ?? 10000);
+    const feePct = Number(formData.get("fee_pct") ?? 1);
+    const dailyLimit = Number(formData.get("daily_order_limit") ?? 10);
+    const positionCapRaw = String(formData.get("position_cap") ?? "").trim();
+    const minOrder = Number(formData.get("min_order") ?? 10);
+    const maxPlayersRaw = String(formData.get("max_players") ?? "").trim();
+    const poolCategory = String(formData.get("pool_category") ?? "").trim();
+
+    if (!name) return { ok: false, message: "Name the tournament." };
+    if (!(days >= 3 && days <= 120)) return { ok: false, message: "Length must be 3–120 days." };
+    if (!(startingBalance >= 100)) return { ok: false, message: "Starting balance must be at least $100." };
+    if (!(feePct >= 0 && feePct <= 20)) return { ok: false, message: "Fee must be 0–20%." };
+    if (!(dailyLimit >= 1)) return { ok: false, message: "Daily order limit must be at least 1." };
+
+    const admin = supabaseAdmin();
+    const start = new Date();
+    const end = new Date(Date.now() + days * 86400000);
+    const { data: season, error } = await admin.from("seasons").insert({
+      name,
+      description,
+      start_date: start.toISOString().slice(0, 10),
+      end_date: end.toISOString().slice(0, 10),
+      status: "active",
+      starting_balance: startingBalance,
+      fee_bps: Math.round(feePct * 100),
+      daily_order_limit: dailyLimit,
+      position_cap: positionCapRaw ? Number(positionCapRaw) : null,
+      min_order: minOrder,
+      max_players: maxPlayersRaw ? Number(maxPlayersRaw) : null,
+    }).select("id").single();
+    if (error || !season) return { ok: false, message: error?.message ?? "Insert failed." };
+
+    let poolSize: number | null = null;
+    if (poolCategory) {
+      const { data: poolCards } = await admin
+        .from("cards").select("id").eq("active", true).eq("category", poolCategory);
+      if (poolCards && poolCards.length > 0) {
+        await admin.from("season_cards").insert(
+          poolCards.map((c) => ({ season_id: season.id, card_id: c.id }))
+        );
+        poolSize = poolCards.length;
+      }
+    }
+
+    await admin.from("admin_audit_log").insert({
+      admin_id: adminId, action: "tournament_created",
+      detail: { name, days, startingBalance, feePct, dailyLimit, poolCategory: poolCategory || "all", poolSize },
+    });
+    revalidatePath("/", "layout");
+    return {
+      ok: true,
+      message: `${name} is live${poolSize ? ` with a ${poolSize}-card pool` : " (full card pool)"}.`,
+    };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Failed." };
+  }
+}
+
+export async function endTournament(seasonId: string): Promise<ActionResult> {
+  const supabase = supabaseServer();
+  const { error } = await supabase.rpc("end_season", { p_season: seasonId });
+  if (error) return { ok: false, message: error.message };
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Tournament ended: positions liquidated, standings archived." };
 }
 
 export async function startSeason(formData: FormData): Promise<ActionResult> {
