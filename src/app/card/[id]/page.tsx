@@ -29,11 +29,11 @@ export default async function CardDetail({ params }: { params: { id: string } })
       supabase.from("price_snapshots").select("price, price_date")
         .eq("card_id", params.id).order("price_date", { ascending: true }).limit(60),
       season
-        ? supabase.from("positions").select("quantity, average_buy_price, cost_basis")
+        ? supabase.from("positions").select("quantity, average_buy_price, cost_basis, reserved_quantity")
             .eq("user_id", user.id).eq("season_id", season.id).eq("card_id", params.id).maybeSingle()
         : Promise.resolve({ data: null }),
       season
-        ? supabase.from("portfolios").select("virtual_cash")
+        ? supabase.from("portfolios").select("virtual_cash, reserved_cash")
             .eq("user_id", user.id).eq("season_id", season.id).maybeSingle()
         : Promise.resolve({ data: null }),
       supabase.from("watchlist").select("card_id")
@@ -95,9 +95,9 @@ export default async function CardDetail({ params }: { params: { id: string } })
             price={Number(card.current_price)}
             priceFresh={!!card.price_fresh}
             active={!!card.active}
-            ownedQty={Number(pos?.quantity ?? 0)}
+            ownedQty={Math.max(0, Number(pos?.quantity ?? 0) - Number(pos?.reserved_quantity ?? 0))}
             costBasis={Number(pos?.cost_basis ?? 0)}
-            cash={Number(pf.virtual_cash)}
+            cash={Math.max(0, Number(pf.virtual_cash) - Number(pf.reserved_cash ?? 0))}
             tradesToday={Number(count?.trade_count ?? 0)}
           />
         )}
