@@ -13,13 +13,15 @@ export type ActionResult = { ok: boolean; message: string };
 // Buys are denominated in pre-fee dollars; sells in fractional quantity.
 export async function placeTrade(formData: FormData): Promise<ActionResult> {
   const supabase = supabaseServer();
+  const seasonId = String(formData.get("season_id") ?? "");
   const card = String(formData.get("card_id") ?? "");
   const side = String(formData.get("side") ?? "");
   const raw = Number(formData.get("value") ?? 0);
-  if (!card || !["buy", "sell"].includes(side) || !raw || raw <= 0) {
+  if (!seasonId || !card || !["buy", "sell"].includes(side) || !raw || raw <= 0) {
     return { ok: false, message: "Enter a valid amount." };
   }
   const { data, error } = await supabase.rpc("place_order", {
+    p_season: seasonId,
     p_card: card,
     p_side: side,
     p_amount: side === "buy" ? raw : null,
