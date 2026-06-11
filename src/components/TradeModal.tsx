@@ -6,36 +6,44 @@ import { placeTrade } from "@/app/actions";
 type Props = {
   cardId: string;
   cardName: string;
-  price: number;
+  price: number;          // latest snapshot price (estimate for the fill)
   priceFresh: boolean;
   active: boolean;
-  ownedQty: number;
+  ownedQty: number;       // available (unreserved) quantity
   costBasis: number;
-  cash: number;
+  cash: number;           // available (unreserved) cash
   tradesToday: number;
 };
 
 export default function TradeModal(props: Props) {
   const [open, setOpen] = useState(false);
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [mode, setMode] = useState<"amount" | "quantity">("amount");
   const [value, setValue] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
   const num = parseFloat(value) || 0;
-  const tradeValue = mode === "amount" ? num : num * props.price;
-  const fee = Math.round(tradeValue * 0.01 * 100) / 100;
+  // Buys are entered in dollars; sells in quantity. Fill price is unknown
+  // until the next daily update, so everything below is an estimate.
+  const estValue = side === "buy" ? num : num * props.price;
+  const estFee = Math.round(estValue * 0.01 * 100) / 100;
+  const reserved = side === "buy" ? Math.round((num + num * 0.01) * 100) / 100 : 0;
+  const estQty = side === "buy" && props.price > 0 ? num / props.price : num;
   const headroom = Math.max(0, 2500 - props.costBasis);
   const tradesLeft = Math.max(0, 10 - props.tradesToday);
   const canTrade = props.priceFresh && tradesLeft > 0 && (side === "sell" || props.active);
+
+  function pick(next: "buy" | "sell") {
+    setSide(next);
+    setValue("");
+    setMsg(null);
+  }
 
   function submit() {
     setMsg(null);
     const fd = new FormData();
     fd.set("card_id", props.cardId);
     fd.set("side", side);
-    fd.set("mode", mode);
     fd.set("value", value);
     startTransition(async () => {
       const res = await placeTrade(fd);
@@ -54,10 +62,15 @@ export default function TradeModal(props: Props) {
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="font-display text-lg">{props.cardName}</h2>
-                <p className="font-mono text-sm text-faded">${props.price.toFixed(2)} per card</p>
+                <p className="font-mono text-sm text-faded">${props.price.toFixed(2)} latest price</p>
               </div>
               <button className="text-faded hover:text-parchment" onClick={() => setOpen(false)} aria-label="Close">✕</button>
             </div>
+
+            <p className="text-xs text-gold/90 border border-gold/30 rounded-lg px-3 py-2">
+              Orders fill at the <strong>next daily price update</strong> — today&apos;s price is an
+              estimate, not your fill price. Pending orders can be cancelled from your portfolio.
+            </p>
 
             {!props.priceFresh && (
               <p className="text-sm text-ember">Price is stale (over 48 hours old). Trading is paused for this card.</p>
@@ -67,57 +80,57 @@ export default function TradeModal(props: Props) {
             )}
 
             <div className="grid grid-cols-2 gap-2">
-              <button className={side === "buy" ? "btn-buy" : "btn-ghost"} onClick={() => setSide("buy")}>Buy</button>
-              <button className={side === "sell" ? "btn-sell" : "btn-ghost"} onClick={() => setSide("sell")}
+              <button className={side === "buy" ? "btn-buy" : "btn-ghost"} onClick={() => pick("buy")}>Buy</button>
+              <button className={side === "sell" ? "btn-sell" : "btn-ghost"} onClick={() => pick("sell")}
                       disabled={props.ownedQty <= 0}>
                 Sell{props.ownedQty > 0 ? ` (${props.ownedQty})` : ""}
               </button>
             </div>
 
-            <div className="flex gap-2 text-xs">
-              <button onClick={() => setMode("amount")}
-                className={`chip ${mode === "amount" ? "text-gold border-gold/50" : "text-faded border-edge"}`}>
-                Dollar amount
-              </button>
-              <button onClick={() => setMode("quantity")}
-                className={`chip ${mode === "quantity" ? "text-gold border-gold/50" : "text-faded border-edge"}`}>
-                Quantity
-              </button>
-            </div>
-
             <input
               className="input font-mono"
-              type="number" min="0" step={mode === "amount" ? "1" : "0.0001"}
-              placeholder={mode === "amount" ? "Dollars (min $10)" : "Fractional quantity"}
+              type="number" min="0" step={side === "buy" ? "1" : "0.0001"}
+              placeholder={side === "buy" ? "Dollars to invest (min $10)" : "Quantity to sell"}
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
 
             <dl className="text-sm space-y-1 font-mono">
-              <div className="flex justify-between"><dt className="text-faded">Trade value</dt><dd>${tradeValue.toFixed(2)}</dd></div>
-              <div className="flex justify-between"><dt className="text-faded">1% fee</dt><dd>${fee.toFixed(2)}</dd></div>
-              <div className="flex justify-between">
-                <dt className="text-faded">{side === "buy" ? "Total cost" : "You receive"}</dt>
-                <dd className="text-gold">${(side === "buy" ? tradeValue + fee : tradeValue - fee).toFixed(2)}</dd>
-              </div>
-              <div className="flex justify-between"><dt className="text-faded">Cash after</dt>
-                <dd>${(side === "buy" ? props.cash - tradeValue - fee : props.cash + tradeValue - fee).toFixed(2)}</dd></div>
-              {side === "buy" && (
-                <div className="flex justify-between"><dt className="text-faded">Cap headroom ($2,500/card)</dt>
-                  <dd className={tradeValue > headroom ? "text-ember" : ""}>${headroom.toFixed(2)}</dd></div>
+              {side === "buy" ? (
+                <>
+                  <div className="flex justify-between"><dt className="text-faded">Est. quantity</dt><dd>{estQty.toFixed(4)}</dd></div>
+                  <div className="flex justify-between"><dt className="text-faded">1% fee (est.)</dt><dd>${estFee.toFixed(2)}</dd></div>
+                  <div className="flex justify-between">
+                    <dt className="text-faded">Reserved now (incl. fee)</dt>
+                    <dd className="text-gold">${reserved.toFixed(2)}</dd>
+                  </div>
+                  <div className="flex justify-between"><dt className="text-faded">Available cash after</dt>
+                    <dd>${(props.cash - reserved).toFixed(2)}</dd></div>
+                  <div className="flex justify-between"><dt className="text-faded">Cap headroom ($2,500/card)</dt>
+                    <dd className={num > headroom ? "text-ember" : ""}>${headroom.toFixed(2)}</dd></div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between"><dt className="text-faded">Est. value</dt><dd>${estValue.toFixed(2)}</dd></div>
+                  <div className="flex justify-between"><dt className="text-faded">1% fee (est.)</dt><dd>${estFee.toFixed(2)}</dd></div>
+                  <div className="flex justify-between">
+                    <dt className="text-faded">Est. you receive</dt>
+                    <dd className="text-gold">${(estValue - estFee).toFixed(2)}</dd>
+                  </div>
+                </>
               )}
-              <div className="flex justify-between"><dt className="text-faded">Trades left today</dt><dd>{tradesLeft} / 10</dd></div>
+              <div className="flex justify-between"><dt className="text-faded">Orders left today</dt><dd>{tradesLeft} / 10</dd></div>
             </dl>
 
             {msg && <p className={`text-sm ${msg.ok ? "text-jade" : "text-ember"}`}>{msg.text}</p>}
 
             <button className={side === "buy" ? "btn-buy w-full" : "btn-sell w-full"}
                     onClick={submit}
-                    disabled={pending || !canTrade || tradeValue < 10}>
-              {pending ? "Placing…" : `Confirm ${side}`}
+                    disabled={pending || !canTrade || estValue < 10 || (side === "sell" && num > props.ownedQty)}>
+              {pending ? "Placing…" : `Place ${side} order`}
             </button>
             <p className="text-xs text-faded text-center">
-              Virtual credits only. Executes at today&apos;s stored price — no real cards change hands.
+              Virtual credits only. Fills at the next daily price update (~3 AM Central) — no real cards change hands.
             </p>
           </div>
         </div>
